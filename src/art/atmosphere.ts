@@ -2,6 +2,23 @@ import type { Atmosphere, Ctx, Rect } from "../world/types";
 import { INK, rgba } from "./ink";
 import { mulberry32 } from "./rng";
 
+/** Soft radial-gradient sprites, rendered once per colour and stamped with drawImage. */
+const sprites = new Map<string, HTMLCanvasElement>();
+export function glowSprite(color: string): HTMLCanvasElement {
+  let c = sprites.get(color);
+  if (c) return c;
+  c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d")!;
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, color);
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  sprites.set(color, c);
+  return c;
+}
+
 export interface AtmosphereSpec {
   core: Rect;
   bounds: Rect;
@@ -11,6 +28,14 @@ export interface AtmosphereSpec {
   mist: { color: string; alpha: number; count: number; yMin: number; yMax: number };
   particles?: { kind: "petal" | "mote" | "ember" | "leaf"; colors: string[]; count: number };
   birds?: { count: number; color: string; y0: number; y1: number };
+  /** Twinkling points of light drifting slowly (fireflies, glints). */
+  sparkles?: { count: number; color: string };
+  /** A soft beam of light slowly sweeping across the scene. */
+  sweep?: boolean;
+  /** Butterflies wandering on looping paths, wings beating. */
+  butterflies?: { count: number; colors: string[] };
+  /** A second fall of tumbling leaves. */
+  leaves?: { count: number; colors: string[] };
   seed: number;
 }
 
@@ -44,6 +69,17 @@ export function makeAtmosphere(s: AtmosphereSpec): Atmosphere {
       }))
     : [];
 
+  const sparks = s.sparkles
+    ? Array.from({ length: s.sparkles.count }, () => ({ x: s.core.x + r() * s.core.w, y: s.core.y + r() * s.core.h, ph: r() * 10, sp: 0.4 + r() * 0.8, rad: 8 + r() * 10 }))
+    : [];
+
+  const flies = s.butterflies
+    ? Array.from({ length: s.butterflies.count }, () => ({ x: s.core.x + r() * s.core.w, y: s.core.y + 80 + r() * (s.core.h - 160), ph: r() * 20, sp: 0.5 + r() * 0.6, c: s.butterflies!.colors[Math.floor(r() * s.butterflies!.colors.length)] }))
+    : [];
+  const leafs = s.leaves
+    ? Array.from({ length: s.leaves.count }, () => ({ x: s.core.x + r() * s.core.w, v: 14 + r() * 14, ph: r() * 10, c: s.leaves!.colors[Math.floor(r() * s.leaves!.colors.length)], size: 2.4 + r() * 1.8 }))
+    : [];
+
   const draw = (ctx: Ctx, t: number, view: Rect, reduced: boolean) => {
     const tt = reduced ? t * 0.25 : t;
     // Warm key light from the sun's side.
@@ -72,20 +108,13 @@ export function makeAtmosphere(s: AtmosphereSpec): Atmosphere {
 
     // Mist banks drifting slowly sideways.
     ctx.save();
+    const mistSprite = glowSprite(rgba(s.mist.color, 1));
     for (const m of mists) {
       const span = s.bounds.w + m.rx * 2;
       const x = s.bounds.x - m.rx + ((((m.x - s.bounds.x + tt * m.v) % span) + span) % span);
       if (x + m.rx < view.x || x - m.rx > view.x + view.w || m.y + m.ry < view.y || m.y - m.ry > view.y + view.h) continue;
-      const g = ctx.createRadialGradient(x, m.y, 0, x, m.y, m.rx);
-      g.addColorStop(0, rgba(s.mist.color, s.mist.alpha * m.a));
-      g.addColorStop(1, rgba(s.mist.color, 0));
-      ctx.fillStyle = g;
-      ctx.save();
-      ctx.translate(x, m.y);
-      ctx.scale(1, m.ry / m.rx);
-      ctx.translate(-x, -m.y);
-      ctx.fillRect(x - m.rx, m.y - m.rx, m.rx * 2, m.rx * 2);
-      ctx.restore();
+      ctx.globalAlpha = s.mist.alpha * m.a;
+      ctx.drawImage(mistSprite, x - m.rx, m.y - m.ry, m.rx * 2, m.ry * 2);
     }
     ctx.restore();
 
@@ -131,6 +160,77 @@ export function makeAtmosphere(s: AtmosphereSpec): Atmosphere {
       ctx.lineWidth = 1.1;
       ctx.strokeStyle = s.birds!.color;
       ctx.stroke();
+    }
+
+    if (!reduced) {
+      for (const l of leafs) {
+        const y = s.core.y - 30 + ((t * l.v + l.ph * 80) % (s.core.h + 60));
+        const x = l.x + Math.sin(t * 0.8 + l.ph) * 40 + ((t * 6) % 80);
+        if (x < view.x - 10 || x > view.x + view.w + 10 || y < view.y - 10 || y > view.y + view.h + 10) continue;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(t * 1.6 + l.ph);
+        ctx.scale(1, 0.4 + Math.abs(Math.sin(t * 2.2 + l.ph)) * 0.6);
+        ctx.beginPath();
+        ctx.moveTo(0, -l.size);
+        ctx.quadraticCurveTo(l.size, 0, 0, l.size);
+        ctx.quadraticCurveTo(-l.size, 0, 0, -l.size);
+        ctx.fillStyle = l.c;
+        ctx.fill();
+        ctx.restore();
+      }
+      for (const f of flies) {
+        const x = f.x + Math.sin(t * 0.21 * f.sp + f.ph) * 140 + Math.sin(t * 0.9 * f.sp + f.ph * 2) * 18;
+        const y = f.y + Math.cos(t * 0.17 * f.sp + f.ph) * 90 + Math.sin(t * 1.3 + f.ph) * 8;
+        if (x < view.x - 10 || x > view.x + view.w + 10 || y < view.y - 10 || y > view.y + view.h + 10) continue;
+        const beat = Math.abs(Math.sin(t * 11 + f.ph));
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.fillStyle = f.c;
+        ctx.strokeStyle = "rgba(60,40,30,0.6)";
+        ctx.lineWidth = 0.4;
+        for (const side of [-1, 1]) {
+          ctx.beginPath();
+          ctx.ellipse(side * 2.4 * (0.25 + beat * 0.75), -0.8, 2.6 * (0.25 + beat * 0.75), 2, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.fillStyle = "rgba(60,40,30,0.85)";
+        ctx.fillRect(-0.4, -2, 0.8, 4);
+        ctx.restore();
+      }
+    }
+
+    if (s.sweep && !reduced) {
+      // A wide, soft beam of warm light drifting across the scene and back.
+      const c0 = s.core;
+      const bx = c0.x + ((Math.sin(t * 0.045) + 1) / 2) * c0.w;
+      ctx.save();
+      ctx.globalCompositeOperation = "soft-light";
+      ctx.translate(bx, c0.y + c0.h / 2);
+      ctx.rotate(-0.5);
+      const bg = ctx.createLinearGradient(-260, 0, 260, 0);
+      bg.addColorStop(0, "rgba(255,236,190,0)");
+      bg.addColorStop(0.5, "rgba(255,236,190,0.38)");
+      bg.addColorStop(1, "rgba(255,236,190,0)");
+      ctx.fillStyle = bg;
+      ctx.fillRect(-260, -c0.h, 520, c0.h * 2);
+      ctx.restore();
+    }
+
+    if (s.sparkles && !reduced) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      for (const p of sparks) {
+        const x = p.x + Math.sin(t * 0.3 * p.sp + p.ph) * 26;
+        const y = p.y + Math.cos(t * 0.23 * p.sp + p.ph * 1.3) * 18;
+        if (x < view.x - 20 || x > view.x + view.w + 20 || y < view.y - 20 || y > view.y + view.h + 20) continue;
+        const a = Math.max(0, Math.sin(t * 1.4 * p.sp + p.ph));
+        if (a < 0.05) continue;
+        ctx.globalAlpha = a * 0.55;
+        ctx.drawImage(glowSprite(s.sparkles.color), x - p.rad, y - p.rad, p.rad * 2, p.rad * 2);
+      }
+      ctx.restore();
     }
 
     // Vignette anchored to the playable core.

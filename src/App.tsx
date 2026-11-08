@@ -6,7 +6,6 @@ import { motion, transition } from "./game/motion";
 import { createStore, currentTargetId, useGame, type Action, type GameState, type Store } from "./game/store";
 import { world } from "./game/world";
 import { hands, type HandStatus } from "./input/handTracker";
-import { SpeechCommands, speech, type VoiceCommand, type VoiceStatus } from "./input/speech";
 import { LEVELS, assets, assetsReady } from "./levels";
 import { easeInOutCubic } from "./render/camera";
 import { Corridor } from "./ui/Corridor";
@@ -31,7 +30,7 @@ const TOOLS_BY_SCREEN: Record<GameState["screen"], string[]> = {
   toHome: [],
   entering: [],
   play: [
-    "use_magnifying_glass", "put_away_magnifying_glass", "lock_in", "move_magnifier", "show_target", "hide_target", "continue", "try_again",
+    "use_magnifying_glass", "put_away_magnifying_glass", "lock_in", "move_magnifier", "show_target", "continue", "try_again",
     "restart_level", "replay_level", "back_to_windows", "set_controls", "toggle_sound",
   ],
   leaving: [],
@@ -39,7 +38,7 @@ const TOOLS_BY_SCREEN: Record<GameState["screen"], string[]> = {
 
 /** `?start=select` or `?start=play&level=1` jumps straight to a screen (handy while iterating on art). */
 function initialState(): GameState {
-  const base: GameState = { screen: "home", selected: 0, rulesOpen: false, play: null, inputMode: "pointer", soundOn: false };
+  const base: GameState = { screen: "home", selected: 0, rulesOpen: false, play: null, inputMode: "pointer", soundOn: true };
   const q = new URLSearchParams(location.search);
   const selected = Math.max(0, Math.min(LEVELS.length - 1, Number(q.get("level") ?? 0) || 0));
   if (q.get("start") === "select") return { ...base, screen: "select", selected };
@@ -63,9 +62,7 @@ export default function App() {
   const corridorRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [handStatus, setHandStatus] = useState<HandStatus>("off");
-  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("off");
   const [notice, setNotice] = useState<string | null>(null);
-  const hostSpeech = useRef<(() => void) | null>(null);
   const [artReady, setArtReady] = useState(assets.loaded);
   useEffect(() => {
     let live = true;
@@ -165,6 +162,16 @@ export default function App() {
   useEffect(() => {
     ambient.setEnabled(state.soundOn && !paused);
   }, [state.soundOn, paused]);
+  // Music plays by default. Where the browser blocks autoplay, it starts on the first key or tap.
+  useEffect(() => {
+    const unlock = () => ambient.resume();
+    window.addEventListener("keydown", unlock, { once: true });
+    window.addEventListener("pointerdown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("keydown", unlock);
+      window.removeEventListener("pointerdown", unlock);
+    };
+  }, []);
 
   /* ── Hand tracking ── */
   useEffect(() => hands.onStatus(setHandStatus), []);
@@ -185,57 +192,27 @@ export default function App() {
     const hostCam = app.can("media.camera") ? () => app.media.camera({ facing: "user", width: 640, height: 480 }) : undefined;
     void hands.start(hostCam);
   }, [app, store]);
+  // Scenes are played with the camera by default; declining falls back to pointer controls.
+  const lastScreen = useRef(store.get().screen);
+  useEffect(() => {
+    const prev = lastScreen.current;
+    lastScreen.current = state.screen;
+    if (state.screen === "play" && prev !== "play" && artReady && store.get().inputMode !== "hand") chooseHand();
+  }, [state.screen, artReady, chooseHand, store]);
+
   const choosePointer = useCallback(() => {
     store.dispatch({ type: "inputMode", mode: "pointer" });
     hands.stop();
   }, [store]);
 
-  /* ── Voice ── */
-  useEffect(() => speech.onStatus(setVoiceStatus), []);
-  const runVoice = useCallback(
-    (cmd: VoiceCommand) => {
-      if (cmd === "magnifier") controls.activateLens();
-      else if (cmd === "lockIn") controls.lockIn();
-      else if (cmd === "continue") store.dispatch({ type: "continue" });
-      else if (cmd === "retry") store.dispatch({ type: "retry" });
-    },
-    [store],
-  );
-  useEffect(() => speech.onCommand((c) => runVoice(c)), [runVoice]);
-  const toggleVoice = useCallback(() => {
-    if (hostSpeech.current) {
-      hostSpeech.current();
-      hostSpeech.current = null;
-      speech.stop();
-      return;
-    }
-    if (voiceStatus === "listening") {
-      speech.stop();
-      return;
-    }
-    if (app.can("sense.speech")) {
-      // On a Little television the platform's recogniser feeds us a read-only transcript tap.
-      let utterance = 0;
-      hostSpeech.current = app.sense.speech((f) => {
-        speech.hear(f.text, utterance);
-        if (f.final) utterance++;
-      });
-      speech.useHost();
-      return;
-    }
-    speech.start();
-  }, [app, voiceStatus]);
-
   // Release the camera and microphone when the television pauses the app.
   useEffect(() => {
     if (!paused) return;
     if (hands.status !== "off") choosePointer();
-    if (speech.status === "listening") speech.stop();
   }, [paused, choosePointer]);
 
   /* ── Keyboard and TV remote ── */
   useEffect(() => {
-    const held = { n: 0 };
     const onKey = (e: KeyboardEvent) => {
       const s = store.get();
       const target = e.target as HTMLElement;
@@ -245,9 +222,27 @@ export default function App() {
         return;
       }
       switch (s.screen) {
-        case "home":
-          if (e.key === "Escape") void app.exit();
+        case "home": {
+          if (e.key === "Escape") {
+            void app.exit();
+            return;
+          }
+          // D-pad: left/right between Play and Rules, up to the sound toggle, down back to Play.
+          const main = [...document.querySelectorAll<HTMLButtonElement>(".home-buttons button")];
+          const sound = document.querySelector<HTMLButtonElement>(".corner-btn.top-right");
+          const i = main.indexOf(document.activeElement as HTMLButtonElement);
+          let next: HTMLButtonElement | null | undefined = null;
+          if (e.key === "ArrowLeft") next = main[Math.max(0, (i < 0 ? 0 : i) - 1)];
+          else if (e.key === "ArrowRight") next = main[Math.min(main.length - 1, i < 0 ? 0 : i + 1)];
+          else if (e.key === "ArrowUp") next = sound;
+          else if (e.key === "ArrowDown") next = main[0];
+          else if (e.key === "Enter" && !onButton) next = main[0];
+          if (!next) return;
+          e.preventDefault();
+          next.focus({ preventScroll: true });
+          if (e.key === "Enter") next.click();
           return;
+        }
         case "select":
           if (e.key === "ArrowLeft") store.dispatch({ type: "select", index: s.selected - 1 });
           else if (e.key === "ArrowRight") store.dispatch({ type: "select", index: s.selected + 1 });
@@ -259,29 +254,35 @@ export default function App() {
         case "play": {
           const p = s.play!;
           if (e.key === "Escape") {
-            if (p.cardOpen) store.dispatch({ type: "card", open: false });
-            else if (p.phase === "exploring" || p.phase === "complete") store.dispatch({ type: "leave" });
+            if (p.phase === "exploring" || p.phase === "complete") store.dispatch({ type: "leave" });
             e.preventDefault();
             return;
           }
-          if (p.phase !== "exploring") return;
-          if (e.key.toLowerCase() === "m" && !e.metaKey && !e.ctrlKey) {
-            if (p.lensActive) store.dispatch({ type: "lens", on: false });
-            else controls.activateLens();
-            return;
-          }
-          if (p.lensActive && s.inputMode === "pointer" && e.key.startsWith("Arrow")) {
-            held.n = e.repeat ? Math.min(held.n + 1, 12) : 0;
-            const step = 14 + held.n * 4;
-            const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
-            const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
-            controls.moveLens(dx, dy);
+          // Completion screen: left/right between its buttons, like the title screen.
+          if (p.phase === "complete" && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+            const btns = [...document.querySelectorAll<HTMLButtonElement>(".complete-buttons button")];
+            const i = btns.indexOf(document.activeElement as HTMLButtonElement);
+            const next = e.key === "ArrowLeft" ? btns[Math.max(0, (i < 0 ? 0 : i) - 1)] : btns[Math.min(btns.length - 1, i < 0 ? 0 : i + 1)];
+            next?.focus({ preventScroll: true });
             e.preventDefault();
             return;
           }
-          if (e.key === "Enter" && p.lensActive && !onButton) {
-            controls.lockIn();
+          // The D-pad only navigates the corridor and the windows; in a scene it does nothing.
+          if (e.key.startsWith("Arrow")) {
             e.preventDefault();
+            return;
+          }
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          // Select: first press raises the magnifier, then every press locks in.
+          if (p.phase === "exploring") {
+            if (!p.lensActive) controls.activateLens();
+            else controls.lockIn();
+          } else if (p.phase === "result") {
+            store.dispatch({ type: p.lastResult?.correct ? "continue" : "retry" });
+          } else if (p.phase === "complete") {
+            const focused = onButton ? (target as HTMLButtonElement) : document.querySelector<HTMLButtonElement>(".complete-buttons button");
+            focused?.click();
           }
           return;
         }
@@ -325,11 +326,9 @@ export default function App() {
   useLittleTool("show_target", () => {
     const s = store.get();
     if (s.screen !== "play" || !s.play) return reject("Not in a scene.");
-    store.dispatch({ type: "card", open: true });
     const t = world.scene(s.play.level).targets.find((x) => x.id === currentTargetId(s.play!))!;
     return { detail: `Looking for: ${t.name}. Clue: ${t.clue}` };
   });
-  useLittleTool("hide_target", () => (store.dispatch({ type: "card", open: false }) ? undefined : reject("The target card isn't open.")));
   useLittleTool("continue", () => (store.dispatch({ type: "continue" }) ? undefined : reject("Continue is available after a correct discovery.")));
   useLittleTool("try_again", () => (store.dispatch({ type: "retry" }) ? undefined : reject("Try again is available after an incorrect guess.")));
   useLittleTool("restart_level", () => (store.dispatch({ type: "restart" }) ? undefined : reject("Not in a scene, or a discovery is being checked.")));
@@ -365,9 +364,6 @@ export default function App() {
           <Gameplay
             store={store}
             state={state}
-            voiceStatus={voiceStatus}
-            voiceSupported={SpeechCommands.supported() || app.can("sense.speech")}
-            onToggleVoice={toggleVoice}
             onChooseHand={chooseHand}
             onChoosePointer={choosePointer}
             handStatus={handStatus}

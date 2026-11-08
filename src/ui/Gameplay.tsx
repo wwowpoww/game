@@ -8,17 +8,13 @@ import { currentTargetId, type GameState, type Store } from "../game/store";
 import { LENS, evaluateHit, world } from "../game/world";
 import { hands, type HandStatus } from "../input/handTracker";
 import { OneEuro } from "../input/oneEuro";
-import type { VoiceStatus } from "../input/speech";
-import { BackIcon, HandIcon, MagnifierIcon, MicIcon, PointerIcon, RestartIcon, SoundIcon } from "./icons";
+import { BackIcon, HandIcon, MagnifierIcon, PointerIcon, RestartIcon, SoundIcon } from "./icons";
 import { TargetArt } from "./TargetArt";
 import { clientToStage } from "./stageCoords";
 
 interface Props {
   store: Store;
   state: GameState;
-  voiceStatus: VoiceStatus;
-  voiceSupported: boolean;
-  onToggleVoice: () => void;
   onChooseHand: () => void;
   onChoosePointer: () => void;
   handStatus: HandStatus;
@@ -26,7 +22,7 @@ interface Props {
 
 const R = LENS.radius;
 
-export function Gameplay({ store, state, voiceStatus, voiceSupported, onToggleVoice, onChooseHand, onChoosePointer, handStatus }: Props) {
+export function Gameplay({ store, state, onChooseHand, onChoosePointer, handStatus }: Props) {
   const play = state.play!;
   const level = LEVELS.find((l) => l.id === play.level)!;
   const scene = world.scene(play.level);
@@ -284,8 +280,6 @@ export function Gameplay({ store, state, voiceStatus, voiceSupported, onToggleVo
   const dimmed = play.phase === "capturing" || play.phase === "result" || play.phase === "complete";
   const handHint =
     handStatus === "tracking" ? "Hand tracked" : handStatus === "lost" ? "Show your hand" : handStatus === "loading" ? "Loading hand model…" : handStatus === "requesting" ? "Waiting for camera…" : handStatus === "denied" ? "Camera declined" : handStatus === "unsupported" ? "Camera unavailable" : handStatus === "error" ? "Hand tracking failed" : "Hand tracking off";
-  const voiceHint =
-    voiceStatus === "listening" ? "Listening" : voiceStatus === "host" ? "Little is listening" : voiceStatus === "denied" ? "Microphone declined" : voiceStatus === "unsupported" ? "Voice unsupported here" : voiceStatus === "error" ? "Voice unavailable" : "Voice off";
 
   return (
     <div className={`gameplay${visible ? " visible" : ""}${dimmed ? " dimmed" : ""}`} data-little="region" data-little-label={`${level.name} scene`}>
@@ -349,29 +343,21 @@ export function Gameplay({ store, state, voiceStatus, voiceSupported, onToggleVo
 
       {/* Right-edge tabs */}
       <div className="tabs">
-        <div className={`target-tab-wrap${play.cardOpen ? " open" : ""}`}>
-          <div className="target-card" aria-hidden={!play.cardOpen} data-little="region" data-little-label="Current target">
-            <div className="card-kicker">Find</div>
-            <TargetArt target={target} size={210} />
-            <div className="card-name" data-little="readout" data-little-label="Target" data-little-data={JSON.stringify({ name: target.name, kind: target.kind, clue: target.clue })}>
-              {target.name}
-            </div>
-            <p className="card-clue">{target.clue}</p>
-            <div className="card-progress" data-little="readout" data-little-label="Progress" data-little-data={JSON.stringify({ found: play.found.length, total: targets.length })}>
-              {targets.map((t, i) => (
-                <span key={t.id} className={`pip${play.found.includes(t.id) ? " found" : ""}${i === play.targetIndex ? " current" : ""}`} title={play.found.includes(t.id) ? t.name : undefined} />
-              ))}
-              <span className="pip-label">
-                {play.found.length} of {targets.length} found
-              </span>
-            </div>
+        <div className="tab target-tab" role="group" aria-label={`Find: ${target.name}`} data-little="region" data-little-label="Current target">
+          <div className="card-kicker">Find</div>
+          <TargetArt target={target} size={176} />
+          <div className="card-name" data-little="readout" data-little-label="Target" data-little-data={JSON.stringify({ name: target.name, kind: target.kind, clue: target.clue })}>
+            {target.name}
           </div>
-          <button className="tab target-tab" aria-expanded={play.cardOpen} aria-label={`Current target: ${target.name}. ${play.cardOpen ? "Hide" : "Show"} reference`} onClick={() => store.dispatch({ type: "card", open: !play.cardOpen })} data-little="control" data-little-action="show_target">
-            <TargetArt target={target} size={76} animate={false} />
-            <span className="tab-label">
+          <p className="card-clue">{target.clue}</p>
+          <div className="card-progress" data-little="readout" data-little-label="Progress" data-little-data={JSON.stringify({ found: play.found.length, total: targets.length })}>
+            {targets.map((t, i) => (
+              <span key={t.id} className={`pip${play.found.includes(t.id) ? " found" : ""}${i === play.targetIndex ? " current" : ""}`} />
+            ))}
+            <span className="pip-label">
               {play.found.length}/{targets.length}
             </span>
-          </button>
+          </div>
         </div>
         <button
           className={`tab magnifier-tab${play.lensActive ? " active" : ""}`}
@@ -390,14 +376,6 @@ export function Gameplay({ store, state, voiceStatus, voiceSupported, onToggleVo
         </button>
       </div>
 
-      {/* Lock in */}
-      <div className={`lockin${play.lensActive && play.phase === "exploring" ? " on" : ""}`}>
-        <button className="btn btn-lock" onClick={() => lockIn()} disabled={!(play.lensActive && play.phase === "exploring")} data-little="control" data-little-action="lock_in">
-          Lock in
-        </button>
-        <div className="lockin-hint">{state.inputMode === "pointer" ? "Click the map, press Enter, or say “lock in”" : "Point with your index finger, then say “lock in”"}</div>
-      </div>
-
       {/* Input + status */}
       <div className="hud bottom-left">
         <div className="seg" role="group" aria-label="Aiming controls">
@@ -408,10 +386,6 @@ export function Gameplay({ store, state, voiceStatus, voiceSupported, onToggleVo
             <HandIcon /> Hand
           </button>
         </div>
-        <button className={`chip-btn${voiceStatus === "listening" || voiceStatus === "host" ? " on" : ""}`} onClick={onToggleVoice} disabled={!voiceSupported && voiceStatus !== "host"} aria-pressed={voiceStatus === "listening"} title={voiceSupported ? "Voice commands" : "Speech recognition isn't available in this browser"}>
-          <MicIcon off={!(voiceStatus === "listening" || voiceStatus === "host")} /> {voiceHint}
-          {(voiceStatus === "listening" || voiceStatus === "host") && <span className="pulse" />}
-        </button>
         {state.inputMode === "hand" && (
           <div className={`status-chip ${handStatus}`} data-little="readout" data-little-label="Hand tracking" data-little-data={JSON.stringify({ status: handStatus })}>
             <span className="dot" /> {handHint}

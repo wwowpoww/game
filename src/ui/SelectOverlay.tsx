@@ -8,12 +8,12 @@ import { clientToStage } from "./stageCoords";
 
 export function SelectOverlay({ store, state }: { store: Store; state: GameState }) {
   const active = state.screen === "select";
-  const enterRef = useRef<HTMLButtonElement>(null);
   const drag = useRef<{ id: number; x0: number; moved: boolean } | null>(null);
   const level = LEVELS[state.selected];
 
+  // Nothing in the carousel holds focus, so Select on the remote enters the highlighted window.
   useEffect(() => {
-    if (active) enterRef.current?.focus({ preventScroll: true });
+    if (active) (document.activeElement as HTMLElement | null)?.blur?.();
   }, [active]);
 
   const go = (d: number) => store.dispatch({ type: "select", index: state.selected + d });
@@ -43,11 +43,14 @@ export function SelectOverlay({ store, state }: { store: Store; state: GameState
       return;
     }
     // A tap on the centred window enters it; taps on the side windows bring them forward.
+    // Tapping the selected window enters it; tapping another window selects it.
     const { x, y } = clientToStage(e.currentTarget as HTMLElement, e.clientX, e.clientY, world.width, world.height);
-    const p = world.windowAt(state.selected, state.selected);
-    if (Math.abs(x - p.x) < 250 && Math.abs(y - p.y) < 330) store.dispatch({ type: "enter" });
-    else if (x < p.x - 250) go(-1);
-    else if (x > p.x + 250) go(1);
+    const hit = LEVELS.findIndex((_, i) => {
+      const p = world.windowAt(i, state.selected);
+      return Math.abs(x - p.x) < 260 && Math.abs(y - p.y) < 320;
+    });
+    if (hit === state.selected) store.dispatch({ type: "enter" });
+    else if (hit >= 0) store.dispatch({ type: "select", index: hit });
   };
 
   return (
@@ -91,9 +94,6 @@ export function SelectOverlay({ store, state }: { store: Store; state: GameState
             <span key={l.id} className={i === state.selected ? "on" : ""} />
           ))}
         </div>
-        <button ref={enterRef} className="btn btn-primary" onClick={() => store.dispatch({ type: "enter" })} disabled={!active} data-little="control" data-little-action="enter_window" data-little-label={`Enter ${level.name}`}>
-          Enter
-        </button>
       </div>
     </div>
   );

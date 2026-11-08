@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@fontsource/cormorant-garamond": "^5.3.0",
+    "@fontsource/hanken-grotesk": "^5.3.0",
     "@kabletv/little-react": "^0.39.1",
     "@kabletv/little-sdk": "^0.39.1",
     "@mediapipe/tasks-vision": "^1.2.2",

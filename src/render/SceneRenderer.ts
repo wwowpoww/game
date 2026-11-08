@@ -1,6 +1,7 @@
 import type { Ctx, Rect, Scene, SceneObject } from "../world/types";
 import { rectsOverlap } from "../world/types";
 import { viewRect, type Camera } from "./camera";
+import { glowSprite } from "../art/atmosphere";
 
 interface LayerCache {
   scale: number;
@@ -261,12 +262,8 @@ export class SceneRenderer {
     for (const g of this.scene.glows) {
       if (g.x + g.r < view.x || g.x - g.r > view.x + view.w || g.y + g.r < view.y || g.y - g.r > view.y + view.h) continue;
       const fl = reduced ? 1 : 1 + g.flicker * (Math.sin(t * 7.3 + g.phase) * 0.5 + Math.sin(t * 13.1 + g.phase * 2) * 0.3);
-      const grad = ctx.createRadialGradient(g.x, g.y, 0, g.x, g.y, g.r);
-      grad.addColorStop(0, g.color);
-      grad.addColorStop(1, "rgba(0,0,0,0)");
       ctx.globalAlpha = Math.max(0, Math.min(1, g.strength * fl));
-      ctx.fillStyle = grad;
-      ctx.fillRect(g.x - g.r, g.y - g.r, g.r * 2, g.r * 2);
+      ctx.drawImage(glowSprite(g.color), g.x - g.r, g.y - g.r, g.r * 2, g.r * 2);
     }
     ctx.restore();
   }

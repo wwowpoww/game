@@ -11,26 +11,50 @@ import { mulberry32 } from "./rng";
 
 const W = 1920;
 const H = 1080;
+/** Horizontal centre, top of the parapet and the floor line of the loggia. */
+const CX = 960;
+const PARAPET = 944;
+const FLOOR = 988;
 export const PARALLAX = { sky: 0.12, city: 0.38, fore: 1 };
 
 const city = (() => {
-  const img = new Image();
-  img.decoding = "async";
-  img.src = new URL("art/corridor-city.jpg", document.baseURI).href;
-  const state = { img, ready: false, top: "#f6c98a" };
-  img.onload = () => {
-    state.ready = true;
+  const load = (src: string) => {
+    const img = new Image();
+    img.decoding = "async";
+    img.src = new URL(src, document.baseURI).href;
+    return new Promise<HTMLImageElement>((res, rej) => {
+      img.onload = () => res(img);
+      img.onerror = rej;
+    });
+  };
+  const state = { ready: false, top: "#f6c98a", tile: null as HTMLCanvasElement | null };
+  void load("art/corridor-city.jpg").then((a) => {
+    // The painting alternates with its mirror image, so every join matches exactly: the strip
+    // loops forever with no seam and nothing ever shows through.
+    const w = a.naturalWidth, h = a.naturalHeight;
+    const tile = document.createElement("canvas");
+    tile.width = w * 2;
+    tile.height = h;
+    const tg = tile.getContext("2d")!;
+    tg.drawImage(a, 0, 0);
+    tg.save();
+    tg.translate(w * 2, 0);
+    tg.scale(-1, 1);
+    tg.drawImage(a, 0, 0);
+    tg.restore();
     // Sample the sky colour along the top edge so the sky can continue above the painting.
     const c = document.createElement("canvas");
     c.width = 32;
-    c.height = 2;
+    c.height = 1;
     const g = c.getContext("2d")!;
-    g.drawImage(img, 0, 0, img.naturalWidth, 4, 0, 0, 32, 2);
+    g.drawImage(a, 0, 0, w, 4, 0, 0, 32, 1);
     const d = g.getImageData(0, 0, 32, 1).data;
-    let r = 0, gg = 0, b = 0;
-    for (let i = 0; i < 32; i++) { r += d[i * 4]; gg += d[i * 4 + 1]; b += d[i * 4 + 2]; }
-    state.top = `rgb(${Math.round(r / 32)},${Math.round(gg / 32)},${Math.round(b / 32)})`;
-  };
+    let r = 0, gg = 0, bb = 0;
+    for (let i = 0; i < 32; i++) { r += d[i * 4]; gg += d[i * 4 + 1]; bb += d[i * 4 + 2]; }
+    state.top = `rgb(${Math.round(r / 32)},${Math.round(gg / 32)},${Math.round(bb / 32)})`;
+    state.tile = tile;
+    state.ready = true;
+  });
   return state;
 })();
 
@@ -71,9 +95,9 @@ function buildLayers(px: number): Layers {
       c.lineTo(x1, bottom);
       c.closePath();
     };
-    arch(560, 1360, 430, 800);
-    arch(-180, 390, 520, 800);
-    arch(1530, 2100, 520, 800);
+    arch(560, 1360, 430, PARAPET + 10);
+    arch(-180, 390, 450, PARAPET + 10);
+    arch(1530, 2100, 450, PARAPET + 10);
     c.fill("evenodd");
     // Vault shading and carved courses on the piers.
     c.save();
@@ -87,7 +111,7 @@ function buildLayers(px: number): Layers {
     c.strokeStyle = "rgba(255,210,160,0.05)";
     c.lineWidth = 1.5;
     c.beginPath();
-    for (let y = 40; y < 800; y += 46) {
+    for (let y = 40; y < PARAPET; y += 46) {
       c.moveTo(0, y);
       c.lineTo(W, y);
     }
@@ -120,89 +144,91 @@ function buildLayers(px: number): Layers {
       }
       c.stroke();
     };
-    rim(560, 1360, 430, 800);
-    rim(-180, 390, 520, 800);
-    rim(1530, 2100, 520, 800);
+    rim(560, 1360, 430, PARAPET + 10);
+    rim(-180, 390, 450, PARAPET + 10);
+    rim(1530, 2100, 450, PARAPET + 10);
     // Pilaster capitals on the piers
     for (const px0 of [390, 1360]) {
       c.fillStyle = "#211814";
-      c.fillRect(px0 + 20, 400, 130, 28);
+      c.fillRect(px0 + 20, 420, 130, 28);
       c.fillStyle = "rgba(255,196,130,0.16)";
-      c.fillRect(px0 + 20, 400, 130, 3);
+      c.fillRect(px0 + 20, 420, 130, 3);
       c.fillStyle = "#1d1512";
-      c.fillRect(px0 + 40, 428, 90, 372);
+      c.fillRect(px0 + 40, 448, 90, PARAPET - 448);
       c.fillStyle = "rgba(255,196,130,0.07)";
-      c.fillRect(px0 + 40, 428, 4, 372);
+      c.fillRect(px0 + 40, 448, 4, PARAPET - 448);
     }
     // Parapet under the openings with balusters
     c.fillStyle = "#1c1411";
-    c.fillRect(0, 780, W, 60);
+    c.fillRect(0, PARAPET, W, FLOOR - PARAPET);
     c.fillStyle = "rgba(255,196,130,0.22)";
-    c.fillRect(0, 780, W, 2.5);
+    c.fillRect(0, PARAPET, W, 2.5);
     for (let x = 580; x < 1350; x += 38) {
       c.fillStyle = "#0f0b09";
       c.beginPath();
-      c.ellipse(x + 10, 808, 6, 12, 0, 0, Math.PI * 2);
+      c.ellipse(x + 10, (PARAPET + FLOOR) / 2, 6, 11, 0, 0, Math.PI * 2);
       c.fill();
     }
-    // Floor in perspective
-    const fg = c.createLinearGradient(0, 840, 0, H);
-    fg.addColorStop(0, "#21180f");
-    fg.addColorStop(1, darker);
+    // Floor in perspective. It runs on below the frame and becomes the window wall's floor-lit
+    // backdrop, so the descent to the carousel crosses one continuous surface.
+    const fg = c.createLinearGradient(0, FLOOR, 0, H * 2);
+    fg.addColorStop(0, "#22180f");
+    fg.addColorStop(0.18, darker);
+    fg.addColorStop(1, WALL);
     c.fillStyle = fg;
-    c.fillRect(0, 840, W, H - 840);
-    c.strokeStyle = "rgba(255,200,150,0.06)";
+    c.fillRect(0, FLOOR, W, H * 2 - FLOOR);
     c.lineWidth = 1.2;
-    c.beginPath();
-    for (let i = -12; i <= 12; i++) {
-      c.moveTo(960 + i * 40, 840);
-      c.lineTo(960 + i * 260, H);
+    for (let i = -16; i <= 16; i++) {
+      const lg = c.createLinearGradient(0, FLOOR, 0, H * 1.75);
+      lg.addColorStop(0, "rgba(255,200,150,0.07)");
+      lg.addColorStop(1, "rgba(255,200,150,0)");
+      c.strokeStyle = lg;
+      c.beginPath();
+      c.moveTo(CX + i * 40, FLOOR);
+      c.lineTo(CX + i * 40 + i * 220 * ((H * 1.75 - FLOOR) / (H - FLOOR)), H * 1.75);
+      c.stroke();
     }
-    for (let y = 860, g = 14; y < H; y += g, g *= 1.35) {
+    for (let y = FLOOR + 18, g = 14, k = 0; y < H * 1.75; y += g, g *= 1.22, k++) {
+      c.strokeStyle = `rgba(255,200,150,${0.06 * Math.max(0, 1 - (y - FLOOR) / (H * 0.95))})`;
+      c.beginPath();
       c.moveTo(0, y);
       c.lineTo(W, y);
+      c.stroke();
     }
-    c.stroke();
-    // Light cast through the arches onto the floor.
-    const pool = (x0: number, x1: number, alpha: number) => {
-      const lg = c.createLinearGradient(0, 840, 0, H);
+    // Light cast through the arches onto the floor, reaching down toward the windows.
+    const pool = (x0: number, x1: number, alpha: number, reach: number) => {
+      const lg = c.createLinearGradient(0, FLOOR, 0, FLOOR + reach);
       lg.addColorStop(0, `rgba(255,190,120,${alpha})`);
+      lg.addColorStop(0.45, `rgba(255,175,110,${alpha * 0.4})`);
       lg.addColorStop(1, "rgba(255,170,110,0)");
       c.fillStyle = lg;
+      const k = reach / (H - FLOOR);
       c.beginPath();
-      c.moveTo(x0, 840);
-      c.lineTo(x1, 840);
-      c.lineTo(x1 + (x1 - 960) * 0.9, H);
-      c.lineTo(x0 + (x0 - 960) * 0.9, H);
+      c.moveTo(x0, FLOOR);
+      c.lineTo(x1, FLOOR);
+      c.lineTo(x1 + (x1 - CX) * 0.9 * k, FLOOR + reach);
+      c.lineTo(x0 + (x0 - CX) * 0.9 * k, FLOOR + reach);
       c.closePath();
       c.fill();
     };
-    pool(600, 1320, 0.2);
-    pool(-120, 360, 0.12);
-    pool(1560, 2040, 0.12);
-    // Below the floor the corridor turns to solid wall (the select screen's background).
-    const wg = c.createLinearGradient(0, H, 0, H + 320);
-    wg.addColorStop(0, darker);
-    wg.addColorStop(1, WALL);
-    c.fillStyle = wg;
-    c.fillRect(0, H, W, 320);
-    c.fillStyle = WALL;
-    c.fillRect(0, H + 320, W, H - 320);
+    pool(600, 1320, 0.2, 900);
+    pool(-120, 360, 0.12, 600);
+    pool(1560, 2040, 0.12, 600);
     // Potted plant silhouettes at the pier bases, rim lit.
     for (const [x, flip] of [[470, 1], [1450, -1]] as const) {
       c.fillStyle = "#0e0a08";
       c.beginPath();
-      c.moveTo(x - 30, 780);
-      c.lineTo(x + 30, 780);
-      c.lineTo(x + 22, 840);
-      c.lineTo(x - 22, 840);
+      c.moveTo(x - 30, PARAPET);
+      c.lineTo(x + 30, PARAPET);
+      c.lineTo(x + 22, FLOOR);
+      c.lineTo(x - 22, FLOOR);
       c.closePath();
       c.fill();
       for (let i = 0; i < 9; i++) {
         const a = -Math.PI / 2 + (i - 4) * 0.33 * flip;
         c.beginPath();
-        c.moveTo(x, 780);
-        c.quadraticCurveTo(x + Math.cos(a) * 50, 780 + Math.sin(a) * 70, x + Math.cos(a) * 80, 780 + Math.sin(a) * 90 + 30);
+        c.moveTo(x, PARAPET);
+        c.quadraticCurveTo(x + Math.cos(a) * 50, PARAPET + Math.sin(a) * 70, x + Math.cos(a) * 80, PARAPET + Math.sin(a) * 90 + 30);
         c.lineWidth = 9;
         c.strokeStyle = "#0e0a08";
         c.stroke();
@@ -240,14 +266,16 @@ export function drawCorridor(ctx: Ctx, px: number, t: number, descent: number, r
   ctx.imageSmoothingQuality = "high";
   const swayX = reduced ? 0 : sway;
 
-  // The painted city, slightly oversized so it can drift (ping-pong) like a slow pan.
-  const PW = 2200;
-  const PH = city.ready ? (PW * city.img.naturalHeight) / city.img.naturalWidth : 1238;
+  // The painted city scrolls endlessly, a seamless tile repeating across the arches.
+  const PH = 1238;
   const top = -60 - dy * PARALLAX.city;
-  const drift = -140 + Math.sin(tt * 0.022) * 130 + swayX * PARALLAX.city;
   ctx.fillStyle = city.top;
   ctx.fillRect(0, 0, W, H);
-  if (city.ready) ctx.drawImage(city.img, drift, top, PW, PH);
+  if (city.ready && city.tile) {
+    const tw = (city.tile.width / city.tile.height) * PH;
+    const off = (((tt * 6 - swayX * PARALLAX.city) % tw) + tw) % tw;
+    for (let x = -off; x < W; x += tw) ctx.drawImage(city.tile, x, top, tw + 1, PH);
+  }
 
   // Soft painterly clouds drifting across the sky
   for (let i = 0; i < 5; i++) {

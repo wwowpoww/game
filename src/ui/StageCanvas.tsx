@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { WALL } from "../art/frames";
+import { corridorLayers } from "../art/corridor";
 import { LEVELS, assets } from "../levels";
 import { easeInOutCubic, lerp } from "../render/camera";
 import { motion, transition } from "../game/motion";
@@ -12,9 +13,13 @@ export const carousel = { pos: 0, drag: 0 };
 
 const posters = new Map<string, HTMLCanvasElement>();
 
+/** The carousel's backdrop is the lower half of the corridor's floor art, so the two read as one. */
 function drawWall(ctx: CanvasRenderingContext2D, w: number, h: number, glowX: number, glowY: number, glowR: number, alpha = 1) {
   ctx.fillStyle = WALL;
   ctx.fillRect(0, 0, w, h);
+  const px = ctx.getTransform().a;
+  const fore = corridorLayers(px).fore;
+  ctx.drawImage(fore, 0, fore.height / 2, fore.width, fore.height / 2, 0, 0, w, h);
   const g = ctx.createRadialGradient(glowX, glowY, glowR * 0.2, glowX, glowY, glowR);
   g.addColorStop(0, `rgba(150,96,52,${0.4 * alpha})`);
   g.addColorStop(0.5, `rgba(80,50,32,${0.24 * alpha})`);
@@ -87,6 +92,7 @@ export function StageCanvas({ store }: { store: Store }) {
       pctx.globalCompositeOperation = "destination-in";
       pctx.drawImage(f.mask, 0, 0, lw, lh);
       pctx.globalCompositeOperation = "source-over";
+      pctx.drawImage(f.shade, 0, 0, lw, lh);
       pctx.drawImage(f.img, 0, 0, lw, lh);
       posters.set(key, c);
       return c;
@@ -104,6 +110,7 @@ export function StageCanvas({ store }: { store: Store }) {
       lctx.globalCompositeOperation = "destination-in";
       lctx.drawImage(fr.f.mask, fr.x, fr.y, fr.w, fr.h);
       lctx.globalCompositeOperation = "source-over";
+      lctx.drawImage(fr.f.shade, fr.x, fr.y, fr.w, fr.h);
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.globalAlpha = alpha;
@@ -113,12 +120,13 @@ export function StageCanvas({ store }: { store: Store }) {
       ctx.restore();
     };
 
-    const drawPoster = (i: number, p: WindowPlacement, alpha: number) => {
+    const drawPoster = (i: number, p: WindowPlacement, alpha: number, dim = 0) => {
       const fr = frameRect(i, p);
       const img = poster(i);
       ctx.save();
       ctx.setTransform(world.pxScale, 0, 0, world.pxScale, 0, 0);
       ctx.globalAlpha = alpha;
+      if (dim > 0) ctx.filter = `brightness(${1 - 0.38 * dim}) saturate(${1 - 0.45 * dim})`;
       ctx.drawImage(img ?? fr.f.img, fr.x, fr.y, fr.w, fr.h);
       ctx.restore();
     };
@@ -130,16 +138,14 @@ export function StageCanvas({ store }: { store: Store }) {
         drawWall(ctx, world.width, world.height, world.width / 2, world.height * 0.42, 780);
         return;
       }
-      const center = world.windowAt(Math.round(pos), pos);
-      drawWall(ctx, world.width, world.height, world.width / 2, center.y, 780);
-      const order = LEVELS.map((_, i) => i).sort((a, b) => Math.abs(b - pos) - Math.abs(a - pos));
-      for (const i of order) {
-        const d = Math.abs(i - pos);
-        if (d > 1.6) continue;
+      const sel = store.get().selected;
+      const focus = world.windowAt(sel, pos);
+      drawWall(ctx, world.width, world.height, focus.x, focus.y, 700);
+      for (let i = 0; i < LEVELS.length; i++) {
         const p = world.windowAt(i, pos);
-        // Side windows recede into the dark wall; the centred window is alive.
-        if (d < 0.5) drawWindowLive(i, p, t, undefined, 1 - d * 0.9);
-        else drawPoster(i, p, 1 - 0.55 * Math.min(1, d));
+        // The selected window is alive and in full colour; the others are a darker still.
+        if (i === sel) drawWindowLive(i, p, t);
+        else drawPoster(i, p, 1, Math.min(1, Math.abs(i - pos)));
       }
     };
 

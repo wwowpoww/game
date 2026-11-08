@@ -17,7 +17,7 @@ export const LENS = {
 };
 
 /** Carousel layout: the centred frame is drawn this tall (in a 1080-high stage). */
-export const CAROUSEL = { frameHeight: 840, spacing: 860, sideScale: 0.58, centerY: 456 };
+export const CAROUSEL = { frameHeight: 600, spacing: 600, centerY: 440 };
 
 export interface WindowPlacement {
   /** Screen position of the frame's zoom anchor (centre of its cover rectangle). */
@@ -83,11 +83,11 @@ class World {
   windowAt(i: number, pos: number): WindowPlacement {
     const f = this.frame(LEVELS[i].frame);
     const { sc } = this.zoomPath(LEVELS[i].frame);
-    const d = i - pos;
-    const ad = Math.min(1.4, Math.abs(d));
-    const s = sc * (1 - (1 - CAROUSEL.sideScale) * Math.min(1, ad));
-    const xc = this.width / 2 + d * CAROUSEL.spacing * (1 - 0.18 * Math.min(1, ad)) * (this.width / 1920);
-    const yc = CAROUSEL.centerY * (this.height / 1080) + (1 - s / sc) * 40;
+    // A fixed, centred row of equal windows; selection moves the focus, not the row.
+    void pos;
+    const s = sc;
+    const xc = this.width / 2 + (i - (LEVELS.length - 1) / 2) * CAROUSEL.spacing * (this.width / 1920);
+    const yc = CAROUSEL.centerY * (this.height / 1080);
     return { x: xc + (f.anchor.x - f.w / 2) * s, y: yc + (f.anchor.y - f.h / 2) * s, s };
   }
 

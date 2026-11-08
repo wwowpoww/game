@@ -12,6 +12,8 @@ export interface FrameAsset {
   h: number;
   /** Opening interior (white) on a transparent canvas, slightly dilated to tuck under the frame. */
   mask: HTMLCanvasElement;
+  /** Inner shadow inside the opening: separates the bright painting from the frame. */
+  shade: HTMLCanvasElement;
   /** Opening bounding box in image pixels. */
   open: { x: number; y: number; w: number; h: number };
   /** Largest centred 16:9 rectangle inside the opening, in image pixels. */
@@ -122,8 +124,31 @@ function analyse(img: HTMLImageElement): FrameAsset {
   tmp.height = h;
   tmp.getContext("2d")!.drawImage(mask, 0, 0);
   for (const [dx, dy] of [[-3, 0], [3, 0], [0, -3], [0, 3], [-2, -2], [2, 2], [-2, 2], [2, -2]]) mg.drawImage(tmp, dx, dy);
+  // Inner shadow: darkness outside the opening, blurred inward, kept only inside the opening.
+  const outside = document.createElement("canvas");
+  outside.width = w;
+  outside.height = h;
+  const og = outside.getContext("2d")!;
+  og.fillStyle = "#120a06";
+  og.fillRect(0, 0, w, h);
+  og.globalCompositeOperation = "destination-out";
+  og.drawImage(mask, 0, 0);
+  const shade = document.createElement("canvas");
+  shade.width = w;
+  shade.height = h;
+  const sg = shade.getContext("2d")!;
+  sg.filter = "blur(22px)";
+  sg.globalAlpha = 1;
+  sg.drawImage(outside, 0, 0);
+  sg.drawImage(outside, 0, 0);
+  sg.filter = "blur(3px)";
+  sg.globalAlpha = 1;
+  sg.drawImage(outside, 0, 0);
+  sg.filter = "none";
+  sg.globalCompositeOperation = "destination-in";
+  sg.drawImage(mask, 0, 0);
   return {
-    img, w, h, mask,
+    img, w, h, mask, shade,
     open: { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 },
     cover: best,
     anchor: { x: best.x + best.w / 2, y: best.y + best.h / 2 },
