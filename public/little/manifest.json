@@ -1,0 +1,148 @@
+{
+  "title": "Veil",
+  "description": "Veil is a calm, atmospheric hidden-object game set in illustrated isometric worlds (a Japanese-inspired garden town, a Greek-inspired hillside and a Moroccan-inspired courtyard city). Launch it when the viewer wants a relaxing puzzle, a hidden-object or seek-and-find game, a game to play with a magnifying glass, or something beautiful to explore on the TV.",
+  "guide": "You are the quiet guide in Veil. The viewer searches an illustration for one target at a time using a magnifying glass, then says “lock in”. You cannot see the illustration and must never guess or reveal where a target is; only the viewer finds them. When the viewer says “use magnifying glass” call use_magnifying_glass; when they say “lock in” call lock_in immediately and say nothing, because the game shows and sounds the result itself. Use move_magnifier only when the viewer asks to move the lens in a direction. Read the target name and clue with show_target if asked what to look for. There are no timers or penalties; keep replies short and warm.",
+  "capabilities": [
+    { "name": "media.camera", "reason": "Track your index fingertip on this device to aim the magnifying glass. Video is never recorded or uploaded." },
+    { "name": "sense.speech", "reason": "Hear “use magnifying glass” and “lock in” so you can play hands-free." }
+  ],
+  "tools": [
+    {
+      "name": "play",
+      "description": "Start the game from the title screen and travel down to the window carousel. Use when the viewer says play, start, or begin.",
+      "authority": "read",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "show_rules",
+      "description": "Open the short rules on the title screen. Use when the viewer asks how to play.",
+      "authority": "read",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "close_rules",
+      "description": "Close the rules panel.",
+      "authority": "read",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "next_window",
+      "description": "Show the next world's window in the carousel. Use for 'next', 'the one on the right', or 'show me another'.",
+      "authority": "read",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "previous_window",
+      "description": "Show the previous world's window in the carousel. Use for 'back one', 'previous', or 'the one on the left'.",
+      "authority": "read",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "enter_window",
+      "description": "Enter a world through its window and start playing it. Pass the window id from the referent map when the viewer names a specific world (for example the Greek one); omit id to enter the centred window.",
+      "authority": "read",
+      "params": {
+        "type": "object",
+        "properties": { "id": { "type": "string", "description": "Window id from the referent map (an item with action enter_window). Omit to enter the centred window." } }
+      }
+    },
+    {
+      "name": "back_to_corridor",
+      "description": "Leave the window carousel and return to the title corridor.",
+      "authority": "read",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "use_magnifying_glass",
+      "description": "Raise the magnifying glass while exploring a scene. Call when the viewer says 'use magnifying glass', 'magnifier', or 'lens'.",
+      "authority": "mutate",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "put_away_magnifying_glass",
+      "description": "Lower the magnifying glass so the whole scene is visible.",
+      "authority": "mutate",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "lock_in",
+      "description": "Submit whatever is at the centre of the magnifying glass as the viewer's discovery. Call immediately when the viewer says 'lock in'. The game shows and announces the result; do not add commentary.",
+      "authority": "mutate",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "move_magnifier",
+      "description": "Nudge the magnifying glass when the viewer asks to move it (for example 'move left a bit' or 'go up a lot').",
+      "authority": "mutate",
+      "params": {
+        "type": "object",
+        "properties": {
+          "direction": { "type": "string", "enum": ["up", "down", "left", "right", "up left", "up right", "down left", "down right"], "description": "Direction the viewer asked for." },
+          "distance": { "type": "string", "enum": ["small", "medium", "large"], "description": "'a bit' is small, 'a lot' is large; default medium." }
+        },
+        "required": ["direction"]
+      }
+    },
+    {
+      "name": "show_target",
+      "description": "Open the target card and read back what the viewer is looking for and its clue. Use when asked 'what am I looking for?' or for a hint.",
+      "authority": "read",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "hide_target",
+      "description": "Close the target card.",
+      "authority": "read",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "continue",
+      "description": "After a correct discovery, continue to the next target.",
+      "authority": "mutate",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "try_again",
+      "description": "After an incorrect guess, return to the scene to keep searching for the same target.",
+      "authority": "read",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "restart_level",
+      "description": "Start the current world over from its first target. Only when the viewer asks to restart.",
+      "authority": "mutate",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "replay_level",
+      "description": "Play the completed world again from the start.",
+      "authority": "mutate",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "back_to_windows",
+      "description": "Leave the current world and zoom back out to the window carousel.",
+      "authority": "read",
+      "params": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "set_controls",
+      "description": "Switch how the magnifier is aimed: 'hand' uses camera fingertip tracking, 'pointer' uses the remote, mouse or touch.",
+      "authority": "mutate",
+      "params": {
+        "type": "object",
+        "properties": { "mode": { "type": "string", "enum": ["hand", "pointer"], "description": "hand for fingertip tracking, pointer for remote/mouse/touch." } },
+        "required": ["mode"]
+      }
+    },
+    {
+      "name": "toggle_sound",
+      "description": "Turn the gentle ambient sound on or off.",
+      "authority": "mutate",
+      "params": {
+        "type": "object",
+        "properties": { "on": { "type": "boolean", "description": "true to turn sound on, false to mute; omit to toggle." } }
+      }
+    }
+  ]
+}
